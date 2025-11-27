@@ -93,13 +93,13 @@ class DatasetMLP:
 class MLPModel(nn.Module):
 	def __init__(self, input_size, output_size):
 		super(MLPModel, self).__init__()
-		self.fc1 = nn.Linear(input_size, 256)
+		self.fc1 = nn.Linear(input_size, 512)
 		# self.dropout1 = nn.Dropout(0.1)
-		self.fc2 = nn.Linear(256, 128)
+		self.fc2 = nn.Linear(512, 128)
 		self.dropout2 = nn.Dropout(0.2)
-		self.fc3 = nn.Linear(128, 64)
-		self.dropout3 = nn.Dropout(0.2)
-		self.fc4 = nn.Linear(64, output_size)
+		self.fc3 = nn.Linear(128, 128)
+		self.dropout3 = nn.Dropout(0.1)
+		self.fc4 = nn.Linear(128, output_size)
 		self.relu = nn.ReLU()
 
 	def forward(self, x):
@@ -116,7 +116,7 @@ class MLPModel(nn.Module):
 
 def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 	criterion = nn.MSELoss()
-	optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, nesterov=True, weight_decay=1e-4)
+	optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, nesterov=True, weight_decay=1e-05)
 	
 	
 	dataloader = DataLoader(torch.utils.data.TensorDataset(dataset.X_train, dataset.y_train), batch_size=batch_size, shuffle=True)
@@ -282,7 +282,7 @@ if __name__ == "__main__":
 	dataset = DatasetMLP(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
 
 	model = MLPModel(input_size=dataset.X_train.shape[1], output_size=dataset.y_train.shape[1]).to(device)
-	train_model(model, dataset, epochs=200, batch_size=128, learning_rate=0.1)
+	train_model(model, dataset, epochs=300, batch_size=512, learning_rate=0.1)
 	print_evaluation(model, dataset)
 	make_graphs(model, dataset)
 	MSE_graph(model, dataset)
