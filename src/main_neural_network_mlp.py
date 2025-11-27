@@ -122,6 +122,12 @@ def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 	dataloader = DataLoader(torch.utils.data.TensorDataset(dataset.X_train, dataset.y_train), batch_size=batch_size, shuffle=True)
 	scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate, steps_per_epoch=len(dataloader), epochs=epochs)
 	
+	# Track best model
+	best_val_loss = float('inf')
+	best_model_state = None
+	
+	pbar = tqdm(total=epochs, desc='Training', unit='epoch')
+	
 	for epoch in range(epochs):
 		model.train()
 		epoch_loss = 0.0
@@ -136,17 +142,30 @@ def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 		
 		epoch_loss /= len(dataloader)
 		
-		try:
-			pbar
-		except NameError:
-			pbar = tqdm(total=epochs, desc='Training', unit='epoch')
-
-		pbar.update(1)
-		pbar.set_postfix(loss=f'{epoch_loss:.4f}', lr=f'{optimizer.param_groups[0]["lr"]:.6f}')
-		# print(f'Epoch [{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}, LR: {optimizer.param_groups[0]["lr"]:.6f}')
-
-		if epoch == epochs - 1:
-			pbar.close()
+		# Validate on test set
+		if dataset.X_test is not None:
+			model.eval()
+			with torch.no_grad():
+				val_outputs = model(dataset.X_test)
+				val_loss = criterion(val_outputs, dataset.y_test).item()
+			
+			# Save best model
+			if val_loss < best_val_loss:
+				best_val_loss = val_loss
+				best_model_state = model.state_dict().copy()
+			
+			pbar.update(1)
+			pbar.set_postfix(train_loss=f'{epoch_loss:.4f}', val_loss=f'{val_loss:.4f}', lr=f'{optimizer.param_groups[0]["lr"]:.6f}')
+		else:
+			pbar.update(1)
+			pbar.set_postfix(loss=f'{epoch_loss:.4f}', lr=f'{optimizer.param_groups[0]["lr"]:.6f}')
+	
+	pbar.close()
+	
+	# Restore best model
+	if best_model_state is not None:
+		model.load_state_dict(best_model_state)
+		print(f'\nRestored best model with validation loss: {best_val_loss:.6f}')
 
 
 def predict(model, X):
