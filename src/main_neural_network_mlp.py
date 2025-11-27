@@ -6,6 +6,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
+from tqdm import tqdm
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,9 +93,9 @@ class DatasetMLP:
 class MLPModel(nn.Module):
 	def __init__(self, input_size, output_size):
 		super(MLPModel, self).__init__()
-		self.fc1 = nn.Linear(input_size, 128)
-		self.dropout1 = nn.Dropout(0.2)
-		self.fc2 = nn.Linear(128, 128)
+		self.fc1 = nn.Linear(input_size, 256)
+		# self.dropout1 = nn.Dropout(0.1)
+		self.fc2 = nn.Linear(256, 128)
 		self.dropout2 = nn.Dropout(0.2)
 		self.fc3 = nn.Linear(128, 64)
 		self.dropout3 = nn.Dropout(0.2)
@@ -103,7 +104,7 @@ class MLPModel(nn.Module):
 
 	def forward(self, x):
 		x = self.relu(self.fc1(x))
-		x = self.dropout1(x)
+		# x = self.dropout1(x)
 		x = self.relu(self.fc2(x))
 		x = self.dropout2(x)
 		x = self.relu(self.fc3(x))
@@ -113,13 +114,13 @@ class MLPModel(nn.Module):
 	
 	
 
-def train_model(model, dataset, epochs=100, batch_size=32, learning_rate=0.001):
+def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 	criterion = nn.MSELoss()
-	optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-	scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.5)
-
+	optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, nesterov=True, weight_decay=1e-4)
+	
 	
 	dataloader = DataLoader(torch.utils.data.TensorDataset(dataset.X_train, dataset.y_train), batch_size=batch_size, shuffle=True)
+	scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate, steps_per_epoch=len(dataloader), epochs=epochs)
 	
 	for epoch in range(epochs):
 		model.train()
@@ -130,13 +131,22 @@ def train_model(model, dataset, epochs=100, batch_size=32, learning_rate=0.001):
 			loss = criterion(outputs, y_batch)
 			loss.backward()
 			optimizer.step()
+			scheduler.step()
 			epoch_loss += loss.item()
 		
 		epoch_loss /= len(dataloader)
-		scheduler.step(epoch_loss)
 		
-		if (epoch+1) % 10 == 0:
-			print(f'Epoch [{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}, LR: {optimizer.param_groups[0]["lr"]:.6f}')
+		try:
+			pbar
+		except NameError:
+			pbar = tqdm(total=epochs, desc='Training', unit='epoch')
+
+		pbar.update(1)
+		pbar.set_postfix(loss=f'{epoch_loss:.4f}', lr=f'{optimizer.param_groups[0]["lr"]:.6f}')
+		# print(f'Epoch [{epoch+1}/{epochs}], Loss: {epoch_loss:.4f}, LR: {optimizer.param_groups[0]["lr"]:.6f}')
+
+		if epoch == epochs - 1:
+			pbar.close()
 
 
 def predict(model, X):
@@ -166,8 +176,11 @@ def print_evaluation(model, dataset):
 		print(f'  Mean Squared Error: {mse[i]:.6f}')
 		print(f'  Root Mean Squared Error: {rmse[i]:.6f}')
 		print(f'  R² Score: {r2[i]:.6f}')
-
-
+	print(f'Averaged over all outputs:')
+	print(f'   Mean Squared Error: {np.mean(mse):.6f}')
+	print(f'   Root Mean Squared Error: {np.mean(rmse):.6f}')
+	print(f'   R² Score: {np.mean(r2):.6f}')
+	
 def make_graphs(model, dataset):
 	predictions_scaled = predict(model, dataset.X_test)
 	predictions = dataset.scaler_y.inverse_transform(predictions_scaled)
@@ -250,11 +263,13 @@ if __name__ == "__main__":
 	dataset = DatasetMLP(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
 
 	model = MLPModel(input_size=dataset.X_train.shape[1], output_size=dataset.y_train.shape[1]).to(device)
-	train_model(model, dataset, epochs=200, batch_size=32, learning_rate=0.001)
+	train_model(model, dataset, epochs=200, batch_size=128, learning_rate=0.1)
 	print_evaluation(model, dataset)
 	make_graphs(model, dataset)
 	MSE_graph(model, dataset)
 	RMSE_graph(model, dataset)
 	r2_graph(model, dataset)
 	save_model(model, './models/mlp_model.pth')
+
+
 	
