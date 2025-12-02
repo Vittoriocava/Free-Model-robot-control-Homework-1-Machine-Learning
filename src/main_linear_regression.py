@@ -8,6 +8,7 @@ import pandas as pd
 import joblib
 import sys
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 class LinearRegressionModel:
     def __init__(self, file_path_train, file_path_test=None):
@@ -88,8 +89,14 @@ class LinearRegressionModel:
         predictions_scaled = self.model.predict(self.X_test)
         # Inverse transform predictions back to original scale
         predictions = self.scaler_y.inverse_transform(predictions_scaled)
-        mse = mean_squared_error(self.y_test, predictions)
-        return mse
+        
+        # Calculate metrics per output
+        mse = np.mean((self.y_test - predictions) ** 2, axis=0)
+        rmse = np.sqrt(mse)
+        r2_scores = 1 - (np.sum((self.y_test - predictions) ** 2, axis=0) / 
+                        np.sum((self.y_test - np.mean(self.y_test, axis=0)) ** 2, axis=0))
+        
+        return mse, rmse, r2_scores
     
     def run(self):
         # Handle case where no separate test file was provided
@@ -104,23 +111,22 @@ class LinearRegressionModel:
             self.y_test = self.scaler_y.inverse_transform(y_test)
         
         self.train_model()
-        mse = self.evaluate_model()
+        self.print_evaluation()
+    
+    def print_evaluation(self):
+        mse, rmse, r2 = self.evaluate_model()
+        num_outputs = self.y_test.shape[1]
         
-        # Get predictions for additional metrics
-        y_pred_scaled = self.model.predict(self.X_test)
-        y_pred = self.scaler_y.inverse_transform(y_pred_scaled)
-        
-        rmse = np.sqrt(mean_squared_error(self.y_test, y_pred))
-        r2 = sklearn.metrics.r2_score(self.y_test, y_pred)
-        
-        # Better normalization using standard deviation
-        y_std = np.std(self.y_test)
-        normalized_rmse = rmse / y_std
-        
-        print(f'Mean Squared Error: {mse:.6f}')
-        print(f'Root Mean Squared Error: {rmse:.6f}')
-        print(f'Normalized RMSE (RMSE/std): {normalized_rmse:.6f}')
-        print(f'R² Score: {r2:.6f}')
+        print(f'\n=== Model Performance ===')
+        for i in range(num_outputs):
+            print(f'Output {i+1}:')
+            print(f'  Mean Squared Error: {mse[i]:.6f}')
+            print(f'  Root Mean Squared Error: {rmse[i]:.6f}')
+            print(f'  R² Score: {r2[i]:.6f}')
+        print(f'Averaged over all outputs:')
+        print(f'   Mean Squared Error: {np.mean(mse):.6f}')
+        print(f'   Root Mean Squared Error: {np.mean(rmse):.6f}')
+        print(f'   R² Score: {np.mean(r2):.6f}')
     
     def savemodel(self, file_name):
         # Save model and scalers together
@@ -144,24 +150,7 @@ class LinearRegressionModel:
             print("No model loaded. Please load a model first.")
             return
         
-        mse = self.evaluate_model()
-        
-        # Get predictions for additional metrics
-        y_pred_scaled = self.model.predict(self.X_test)
-        y_pred = self.scaler_y.inverse_transform(y_pred_scaled)
-        
-        rmse = np.sqrt(mean_squared_error(self.y_test, y_pred))
-        r2 = sklearn.metrics.r2_score(self.y_test, y_pred)
-        
-        # Better normalization using standard deviation
-        y_std = np.std(self.y_test)
-        normalized_rmse = rmse / y_std
-        
-        print(f'\n=== Loaded Model Performance ===')
-        print(f'Mean Squared Error: {mse:.6f}')
-        print(f'Root Mean Squared Error: {rmse:.6f}')
-        print(f'Normalized RMSE (RMSE/std): {normalized_rmse:.6f}')
-        print(f'R² Score: {r2:.6f}')
+        self.print_evaluation()
         
     def make_graphs(self):
         if self.model is None:
@@ -172,6 +161,8 @@ class LinearRegressionModel:
         
         # Scatter plot of actual vs predicted for each output
         num_outputs = self.y_test.shape[1]
+        num_joints = num_outputs
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         for i in range(num_outputs):
             plt.figure()
             plt.scatter(self.y_test[:, i], predictions[:, i], alpha=0.5)
@@ -179,13 +170,9 @@ class LinearRegressionModel:
             plt.ylabel('Predicted Values')
             plt.title(f'Actual vs Predicted for Output {i+1}')
             plt.plot([self.y_test[:, i].min(), self.y_test[:, i].max()], [self.y_test[:, i].min(), self.y_test[:, i].max()], 'k--', lw=2)
-            plt.savefig(f'figures/actual_vs_predicted_output_joint_{i+1}.png')
+            plt.savefig(f'figures/actual_vs_predicted_output_joint_lr_{i+1}_{num_joints}joints_{timestamp}.png')
             plt.show()
-            
-        
-
-
-    
+            plt.close()
 
     def MSE_graph(self):
         if self.model is None:
@@ -194,13 +181,17 @@ class LinearRegressionModel:
         predictions_scaled = self.model.predict(self.X_test)
         predictions = self.scaler_y.inverse_transform(predictions_scaled)
         mse_values = (self.y_test - predictions) ** 2
-        normalized_mse_values = mse_values / np.mean(self.y_test**2)
+        # Use variance instead of mean squared to avoid division issues with centered data
+        normalized_mse_values = mse_values / (np.var(self.y_test) + 1e-8)
+        num_joints = self.y_test.shape[1]
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.plot(normalized_mse_values)
         plt.xlabel('Sample Index')
         plt.ylabel('Normalized Mean Squared Error')
         plt.title('Normalized Mean Squared Error for Each Sample')
-        plt.savefig('figures/normalized_mse_for_each_sample.png')
+        plt.savefig(f'figures/normalized_mse_for_each_sample_lr_{num_joints}joints_{timestamp}.png')
         plt.show()
+        plt.close()
     
     def RMSE_graph(self):
         if self.model is None:
@@ -209,14 +200,17 @@ class LinearRegressionModel:
         predictions_scaled = self.model.predict(self.X_test)
         predictions = self.scaler_y.inverse_transform(predictions_scaled)
         rmse_values = np.sqrt((self.y_test - predictions) ** 2)
-        normalized_rmse_values = rmse_values / np.mean(self.y_test)
+        # Use std instead of mean to avoid division by near-zero for centered data
+        normalized_rmse_values = rmse_values / (np.std(self.y_test) + 1e-8)
+        num_joints = self.y_test.shape[1]
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.plot(normalized_rmse_values)
         plt.xlabel('Sample Index')
         plt.ylabel('Normalized RMSE')
         plt.title('Normalized RMSE for Each Sample')
-        plt.savefig('figures/normalized_rmse_for_each_sample.png')
-
+        plt.savefig(f'figures/normalized_rmse_for_each_sample_lr_{num_joints}joints_{timestamp}.png')
         plt.show()
+        plt.close()
     
     def r2_graph(self):
         if self.model is None:
@@ -224,27 +218,36 @@ class LinearRegressionModel:
             return
         predictions_scaled = self.model.predict(self.X_test)
         predictions = self.scaler_y.inverse_transform(predictions_scaled)
-        r2_values = sklearn.metrics.r2_score(self.y_test, predictions, multioutput='raw_values')
-        plt.plot(r2_values)
+        num_outputs = self.y_test.shape[1]
+        num_joints = num_outputs
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        r2_scores = []
+        for i in range(num_outputs):
+            ss_res = np.sum((self.y_test[:, i] - predictions[:, i]) ** 2)
+            ss_tot = np.sum((self.y_test[:, i] - np.mean(self.y_test[:, i])) ** 2)
+            r2 = 1 - (ss_res / ss_tot)
+            r2_scores.append(r2)
+        plt.bar(range(1, num_outputs + 1), r2_scores)
         plt.xlabel('Output Index')
         plt.ylabel('R2 Score')
         plt.title('R2 Score for Each Output')
-        plt.savefig('figures/r2_score_for_each_output.png')
-
+        plt.savefig(f'figures/r2_score_for_each_output_lr_{num_joints}joints_{timestamp}.png')
         plt.show()
+        plt.close()
 
 if __name__ == "__main__":
 
     model = LinearRegressionModel(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
     model.run()
-    model.savemodel('./models/linear_regression_model.pkl')
     
-    # To demonstrate loading and using the saved model
-    loaded_model = LinearRegressionModel(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
-    loaded_model.loadmodel('./models/linear_regression_model.pkl')
-    loaded_model.run_loaded_model()
-    loaded_model.make_graphs()
-    loaded_model.MSE_graph()
-    loaded_model.RMSE_graph()
-    loaded_model.r2_graph()
+    # Save model with timestamp and joint count
+    num_joints = model.y_test.shape[1]
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    model.savemodel(f'./models/linear_regression_model_{num_joints}joints_{timestamp}.pkl')
+    
+    # Generate graphs
+    model.make_graphs()
+    model.MSE_graph()
+    model.RMSE_graph()
+    model.r2_graph()
     

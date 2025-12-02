@@ -1,0 +1,22 @@
+Restored best model with validation loss: 0.280543
+Training curves saved to figures/training_curves_mlp_4joints_20251202_183255.png
+Output 1:
+  Mean Squared Error: 0.000180
+  Root Mean Squared Error: 0.013427
+  R² Score: 0.934880
+Output 2:
+  Mean Squared Error: 0.000412
+  Root Mean Squared Error: 0.020289
+  R² Score: 0.853620
+Output 3:
+  Mean Squared Error: 0.001223
+  Root Mean Squared Error: 0.034976
+  R² Score: 0.555247
+Output 4:
+  Mean Squared Error: 0.001251
+  Root Mean Squared Error: 0.035364
+  R² Score: 0.570630
+Averaged over all outputs:
+   Mean Squared Error: 0.000766
+   Root Mean Squared Error: 0.026014
+   R² Score: 0.728594

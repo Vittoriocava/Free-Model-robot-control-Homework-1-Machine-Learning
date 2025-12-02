@@ -1,0 +1,28 @@
+Output 1:
+  Mean Squared Error: 0.004333
+  Root Mean Squared Error: 0.065825
+  R² Score: -0.001374
+Output 2:
+  Mean Squared Error: 0.003504
+  Root Mean Squared Error: 0.059194
+  R² Score: 0.111690
+Output 3:
+  Mean Squared Error: 0.004081
+  Root Mean Squared Error: 0.063883
+  R² Score: 0.026772
+Output 4:
+  Mean Squared Error: 0.004166
+  Root Mean Squared Error: 0.064541
+  R² Score: 0.004615
+Output 5:
+  Mean Squared Error: 0.004128
+  Root Mean Squared Error: 0.064251
+  R² Score: 0.002155
+Output 6:
+  Mean Squared Error: 0.004298
+  Root Mean Squared Error: 0.065555
+  R² Score: -0.000139
+Averaged over all outputs:
+   Mean Squared Error: 0.004085
+   Root Mean Squared Error: 0.063875
+   R² Score: 0.023953

@@ -1,0 +1,17 @@
+best model with validation loss: 0.248358
+Output 1:
+  Mean Squared Error: 0.000278
+  Root Mean Squared Error: 0.016681
+  R² Score: 0.869074
+Output 2:
+  Mean Squared Error: 0.000612
+  Root Mean Squared Error: 0.024738
+  R² Score: 0.724779
+Output 3:
+  Mean Squared Error: 0.000727
+  Root Mean Squared Error: 0.026969
+  R² Score: 0.683673
+Averaged over all outputs:
+   Mean Squared Error: 0.000539
+   Root Mean Squared Error: 0.022796
+   R² Score: 0.759175

@@ -1,0 +1,16 @@
+=== Model Performance ===
+Output 1:
+  Mean Squared Error: 0.002052
+  Root Mean Squared Error: 0.045299
+  R² Score: 0.034508
+Output 2:
+  Mean Squared Error: 0.002125
+  Root Mean Squared Error: 0.046101
+  R² Score: 0.044223
+Output 3:
+  Mean Squared Error: 0.002298
+  Root Mean Squared Error: 0.047935
+  R² Score: 0.000692
+Averaged over all outputs:
+   Mean Squared Error: 0.002158
+   Root Mean Squared Error: 0.046445

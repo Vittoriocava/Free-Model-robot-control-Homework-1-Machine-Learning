@@ -7,6 +7,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
+from datetime import datetime
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -93,21 +94,21 @@ class DatasetMLP:
 class MLPModel(nn.Module):
 	def __init__(self, input_size, output_size):
 		super(MLPModel, self).__init__()
-		self.fc1 = nn.Linear(input_size, 512)
+		self.fc1 = nn.Linear(input_size, 256)
 		# self.dropout1 = nn.Dropout(0.1)
-		self.fc2 = nn.Linear(512, 128)
-		self.dropout2 = nn.Dropout(0.2)
-		self.fc3 = nn.Linear(128, 128)
-		self.dropout3 = nn.Dropout(0.1)
-		self.fc4 = nn.Linear(128, output_size)
-		self.relu = nn.ReLU()
+		self.fc2 = nn.Linear(256, 256)
+		self.dropout2 = nn.Dropout(0.1)
+		self.fc3 = nn.Linear(256, 64)
+		self.dropout3 = nn.Dropout(0.2)
+		self.fc4 = nn.Linear(64, output_size)
+		self.mish = nn.Mish()
 
 	def forward(self, x):
-		x = self.relu(self.fc1(x))
+		x = self.mish(self.fc1(x))
 		# x = self.dropout1(x)
-		x = self.relu(self.fc2(x))
+		x = self.mish(self.fc2(x))
 		x = self.dropout2(x)
-		x = self.relu(self.fc3(x))
+		x = self.mish(self.fc3(x))
 		x = self.dropout3(x)
 		x = self.fc4(x)
 		return x
@@ -116,15 +117,20 @@ class MLPModel(nn.Module):
 
 def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 	criterion = nn.MSELoss()
-	optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, nesterov=True, weight_decay=1e-05)
+	optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9, nesterov=True, weight_decay=0.0001)
 	
 	
 	dataloader = DataLoader(torch.utils.data.TensorDataset(dataset.X_train, dataset.y_train), batch_size=batch_size, shuffle=True)
-	scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate, steps_per_epoch=len(dataloader), epochs=epochs)
-	
+	# scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=learning_rate, steps_per_epoch=len(dataloader), epochs=epochs)
+	scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 	# Track best model
 	best_val_loss = float('inf')
 	best_model_state = None
+	
+	# Track history for plotting
+	train_losses = []
+	val_losses = []
+	learning_rates = []
 	
 	pbar = tqdm(total=epochs, desc='Training', unit='epoch')
 	
@@ -137,10 +143,15 @@ def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 			loss = criterion(outputs, y_batch)
 			loss.backward()
 			optimizer.step()
-			scheduler.step()
 			epoch_loss += loss.item()
 		
 		epoch_loss /= len(dataloader)
+		current_lr = optimizer.param_groups[0]["lr"]
+		scheduler.step()
+
+		# Save history
+		train_losses.append(epoch_loss)
+		learning_rates.append(current_lr)
 		
 		# Validate on test set
 		if dataset.X_test is not None:
@@ -149,16 +160,18 @@ def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 				val_outputs = model(dataset.X_test)
 				val_loss = criterion(val_outputs, dataset.y_test).item()
 			
+			val_losses.append(val_loss)
+			
 			# Save best model
 			if val_loss < best_val_loss:
 				best_val_loss = val_loss
 				best_model_state = model.state_dict().copy()
 			
 			pbar.update(1)
-			pbar.set_postfix(train_loss=f'{epoch_loss:.4f}', val_loss=f'{val_loss:.4f}', lr=f'{optimizer.param_groups[0]["lr"]:.6f}')
+			pbar.set_postfix(train_loss=f'{epoch_loss:.4f}', val_loss=f'{val_loss:.4f}', lr=f'{current_lr:.6f}')
 		else:
 			pbar.update(1)
-			pbar.set_postfix(loss=f'{epoch_loss:.4f}', lr=f'{optimizer.param_groups[0]["lr"]:.6f}')
+			pbar.set_postfix(loss=f'{epoch_loss:.4f}', lr=f'{current_lr:.6f}')
 	
 	pbar.close()
 	
@@ -166,6 +179,9 @@ def train_model(model, dataset, epochs=200, batch_size=256, learning_rate=0.01):
 	if best_model_state is not None:
 		model.load_state_dict(best_model_state)
 		print(f'\nRestored best model with validation loss: {best_val_loss:.6f}')
+	
+	# Plot training curves
+	plot_training_curves(train_losses, val_losses, learning_rates, dataset.y_train.shape[1])
 
 
 def predict(model, X):
@@ -173,6 +189,39 @@ def predict(model, X):
 	with torch.no_grad():
 		predictions = model(X)
 	return predictions.cpu().numpy()
+
+
+def plot_training_curves(train_losses, val_losses, learning_rates, num_joints):
+	"""Plot training loss, validation loss and learning rate curves"""
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+	epochs = range(1, len(train_losses) + 1)
+	
+	fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+	
+	# Plot Loss
+	ax1.plot(epochs, train_losses, 'b-', label='Training Loss', linewidth=1.5)
+	if val_losses:
+		ax1.plot(epochs, val_losses, 'r-', label='Validation Loss', linewidth=1.5)
+	ax1.set_xlabel('Epoch')
+	ax1.set_ylabel('Loss (MSE)')
+	ax1.set_title('Training and Validation Loss')
+	ax1.legend()
+	ax1.grid(True, alpha=0.3)
+	ax1.set_yscale('log')  # Log scale per vedere meglio i dettagli
+	
+	# Plot Learning Rate
+	ax2.plot(epochs, learning_rates, 'g-', linewidth=1.5)
+	ax2.set_xlabel('Epoch')
+	ax2.set_ylabel('Learning Rate')
+	ax2.set_title('Learning Rate Schedule')
+	ax2.grid(True, alpha=0.3)
+	
+	plt.tight_layout()
+	plt.savefig(f'figures/training_curves_mlp_{num_joints}joints_{timestamp}.png', dpi=150)
+	plt.show()
+	plt.close()
+	
+	print(f"Training curves saved to figures/training_curves_mlp_{num_joints}joints_{timestamp}.png")
 
 
 def evaluate_model(model, dataset):
@@ -206,6 +255,8 @@ def make_graphs(model, dataset):
 	
 	# Scatter plot of actual vs predicted for each output
 	num_outputs = dataset.y_test_raw.shape[1]
+	num_joints = num_outputs  # Number of joints equals number of outputs
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 	for i in range(num_outputs):
 		plt.figure()
 		plt.scatter(dataset.y_test_raw[:, i], predictions[:, i], alpha=0.5)
@@ -213,7 +264,7 @@ def make_graphs(model, dataset):
 		plt.ylabel('Predicted Values')
 		plt.title(f'Actual vs Predicted for Output {i+1}')
 		plt.plot([dataset.y_test_raw[:, i].min(), dataset.y_test_raw[:, i].max()], [dataset.y_test_raw[:, i].min(), dataset.y_test_raw[:, i].max()], 'k--', lw=2)
-		plt.savefig(f'figures/actual_vs_predicted_output_joint_mlp_{i+1}.png')
+		plt.savefig(f'figures/actual_vs_predicted_output_joint_mlp_{i+1}_{num_joints}joints_{timestamp}.png')
 		plt.show()
 		plt.close()
 
@@ -222,12 +273,15 @@ def MSE_graph(model, dataset):
 	predictions_scaled = predict(model, dataset.X_test)
 	predictions = dataset.scaler_y.inverse_transform(predictions_scaled)
 	mse_values = (dataset.y_test_raw - predictions) ** 2
-	normalized_mse_values = mse_values / np.mean(dataset.y_test_raw**2)
+	# Use variance instead of mean squared to avoid division issues with centered data
+	normalized_mse_values = mse_values / (np.var(dataset.y_test_raw) + 1e-8)
+	num_joints = dataset.y_test_raw.shape[1]
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 	plt.plot(normalized_mse_values)
 	plt.xlabel('Sample Index')
 	plt.ylabel('Normalized Mean Squared Error')
 	plt.title('Normalized Mean Squared Error for Each Sample')
-	plt.savefig('figures/normalized_mse_for_each_sample_mlp.png')
+	plt.savefig(f'figures/normalized_mse_for_each_sample_mlp_{num_joints}joints_{timestamp}.png')
 	plt.show()
 	plt.close()
 
@@ -236,12 +290,15 @@ def RMSE_graph(model, dataset):
 	predictions_scaled = predict(model, dataset.X_test)
 	predictions = dataset.scaler_y.inverse_transform(predictions_scaled)
 	rmse_values = np.sqrt((dataset.y_test_raw - predictions) ** 2)
-	normalized_rmse_values = rmse_values / np.mean(dataset.y_test_raw)
+	# Use std instead of mean to avoid division by near-zero for centered data
+	normalized_rmse_values = rmse_values / (np.std(dataset.y_test_raw) + 1e-8)
+	num_joints = dataset.y_test_raw.shape[1]
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 	plt.plot(normalized_rmse_values)
 	plt.xlabel('Sample Index')
 	plt.ylabel('Normalized RMSE')
 	plt.title('Normalized RMSE for Each Sample')
-	plt.savefig('figures/normalized_rmse_for_each_sample_mlp.png')
+	plt.savefig(f'figures/normalized_rmse_for_each_sample_mlp_{num_joints}joints_{timestamp}.png')
 	plt.show()
 	plt.close()
 
@@ -250,6 +307,8 @@ def r2_graph(model, dataset):
 	predictions_scaled = predict(model, dataset.X_test)
 	predictions = dataset.scaler_y.inverse_transform(predictions_scaled)
 	num_outputs = dataset.y_test_raw.shape[1]
+	num_joints = num_outputs
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 	r2_scores = []
 	for i in range(num_outputs):
 		ss_res = np.sum((dataset.y_test_raw[:, i] - predictions[:, i]) ** 2)
@@ -260,7 +319,7 @@ def r2_graph(model, dataset):
 	plt.xlabel('Output Index')
 	plt.ylabel('R2 Score')
 	plt.title('R2 Score for Each Output')
-	plt.savefig('figures/r2_score_for_each_output_mlp.png')
+	plt.savefig(f'figures/r2_score_for_each_output_mlp_{num_joints}joints_{timestamp}.png')
 	plt.show()
 	plt.close()
 
@@ -271,7 +330,7 @@ def save_model(model, file_path):
 
 def load_model(file_path, input_size, output_size):
 	model = MLPModel(input_size, output_size).to(device)
-	model.load_state_dict(torch.load(file_path))
+	model.load_state_dict(torch.load(file_path, weights_only=True))
 	model.eval()
 	return model
 	
@@ -282,13 +341,17 @@ if __name__ == "__main__":
 	dataset = DatasetMLP(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)
 
 	model = MLPModel(input_size=dataset.X_train.shape[1], output_size=dataset.y_train.shape[1]).to(device)
-	train_model(model, dataset, epochs=300, batch_size=512, learning_rate=0.1)
+	train_model(model, dataset, epochs=300, batch_size=256, learning_rate=0.1)
 	print_evaluation(model, dataset)
 	make_graphs(model, dataset)
 	MSE_graph(model, dataset)
 	RMSE_graph(model, dataset)
 	r2_graph(model, dataset)
-	save_model(model, './models/mlp_model.pth')
+	
+	# Save model with timestamp and joint count
+	num_joints = dataset.y_train.shape[1]
+	timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+	save_model(model, f'./models/mlp_model_{num_joints}joints_{timestamp}.pth')
 
 
 	
