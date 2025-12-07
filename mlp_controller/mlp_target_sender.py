@@ -51,21 +51,10 @@ class MLPTargetSender(Node):
         # TF2 for end-effector position
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        try:
-            try:
-            t = self.tf_buffer.lookup_transform(
-                'base_link', 'tip_link', rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.1))
-            self.target= [
-                t.transform.translation.x,
-                t.transform.translation.y,
-                t.transform.translation.z
-            ]
-        except Exception as e:
-            self.get_logger().debug(f"TF lookup failed: {e}")
-            self.target = [0.0, 0.0, 0.0]
-
-        self._update_ee_position()
+        
+        # Initialize target to default, will be updated once TF is available
+        self.target = [self.initial_x, self.initial_y, self.initial_z]
+        self.target_initialized = False
         # Publisher for target position
         self.target_pub = self.create_publisher(
             PointStamped, '/target_position', 10)
@@ -74,6 +63,8 @@ class MLPTargetSender(Node):
         self.marker_pub = self.create_publisher(
             Marker, '/target_marker', 10)
 
+        # Timer to initialize target from end-effector position
+        self.init_timer = self.create_timer(0.5, self._init_target_from_ee)
 
         # Store terminal settings
         self.old_settings = termios.tcgetattr(sys.stdin)
@@ -165,7 +156,7 @@ class MLPTargetSender(Node):
             self.step_size = min(0.1, self.step_size + 0.005)
             print(f"\nStep size: {self.step_size:.3f} m")
         elif key == '-':
-            self.step__update_ee_positionsize = max(0.005, self.step_size - 0.005)
+            self.step_size = max(0.005, self.step_size - 0.005)
             print(f"\nStep size: {self.step_size:.3f} m")
 
         # Print position comparison
@@ -183,6 +174,22 @@ class MLPTargetSender(Node):
             self._print_position_comparison()
         self.publish_target()
         return True
+
+    def _init_target_from_ee(self):
+        """Initialize target position from current end-effector position."""
+        if self.target_initialized:
+            # Already initialized, cancel timer
+            self.init_timer.cancel()
+            return
+        
+        if self._update_ee_position():
+            # Set target to current end-effector position
+            self.target = self.current_ee_position.copy()
+            self.target_initialized = True
+            self.init_timer.cancel()
+            print(f"\n*** Target initialized from end-effector position ***")
+            print(f"    X={self.target[0]:.4f}, Y={self.target[1]:.4f}, Z={self.target[2]:.4f}")
+            self.publish_target()
 
     def _update_ee_position(self):
         """Update end-effector position from TF."""
